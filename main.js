@@ -14,10 +14,10 @@ const v = new Voronoi(numThreads);
 
 stopwatch('initial render', () => v.randomize(numTiles()).partition(metric));
 
-v.addEventListener('mousedown', (e) => {
+v.addEventListener('mousemove', (e) => {
   const x = e.layerX;
   const y = e.layerY;
-  stopwatch('select tile', () => v.selectTile(x, y));
+  v.selectTile(x, y);
 });
 
 document.addEventListener('keydown', e => {

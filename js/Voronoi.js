@@ -2,7 +2,12 @@ import Canvas from './Canvas.js';
 import {rand} from './util.js';
 
 const BLACK = new Uint8ClampedArray(3);
+const NEIGHBOR_OFFSETS = [
+          [1, 0],
+  [0, 1], [1, 1],
+];
 
+let borderPixels;
 let canvas;
 let colorMap;
 let labeledPixels;
@@ -11,6 +16,13 @@ let neighbors;
 let threads;
 let tileBounds;
 let tiles;
+
+function addBounds(target, other) {
+  target[0] = Math.min(target[0], other[0]);
+  target[1] = Math.max(target[1], other[1]);
+  target[2] = Math.min(target[2], other[2]);
+  target[3] = Math.max(target[3], other[3]);
+}
 
 export default class Voronoi {
   constructor(numThreads) {
@@ -46,7 +58,6 @@ export default class Voronoi {
     const rowsPerThread = Math.ceil(height / threads.length);
 
     labeledPixels = new Array(height);
-    neighbors = new Array(tiles.length);
     tileBounds = new Array(tiles.length);
     let startPixel = 0;
     const partitionPromises = new Array(threads.length);
@@ -68,10 +79,7 @@ export default class Voronoi {
             } else {
               const knownBounds = tileBounds[id];
               const threadBounds = threadTileBounds[id];
-              knownBounds[0] = Math.min(knownBounds[0], threadBounds[0]);
-              knownBounds[1] = Math.max(knownBounds[1], threadBounds[1]);
-              knownBounds[2] = Math.min(knownBounds[2], threadBounds[2]);
-              knownBounds[3] = Math.max(knownBounds[3], threadBounds[3]);
+              addBounds(knownBounds, threadBounds);
             }
           }
           resolve();
@@ -79,31 +87,91 @@ export default class Voronoi {
       });
     }
 
-    return Promise.all(partitionPromises).then(() => this.render_());
+    return Promise.all(partitionPromises).then(() => {
+      this.calculateAdjacency_();
+      return this.render_();
+    });
+  }
+
+  calculateAdjacency_() {
+    const width = canvas.width;
+    const height = canvas.height;
+    borderPixels = new Array(height);
+    neighbors = new Array(tiles.length).fill().map(() => new Set());
+    for (let y = 0; y < height; y++) {
+      borderPixels[y] = [];
+      for (let x = 0; x < width; x++) {
+        const thisTile = labeledPixels[y][x];
+        let isBorder = false;
+        NEIGHBOR_OFFSETS.forEach(([dx, dy]) => {
+          const nbrX = x + dx;
+          const nbrY = y + dy;
+          let nbrTile;
+          if ((nbrY < height) &&
+              (nbrTile = labeledPixels[nbrY][nbrX]) !== undefined &&
+              (thisTile !== nbrTile)) {
+            isBorder = true;
+            neighbors[thisTile].add(nbrTile);
+            neighbors[nbrTile].add(thisTile);
+          }
+        });
+        if (isBorder) {
+          borderPixels[y].push(x);
+        }
+      }
+    }
   }
 
   render_() {
-    for (let y = 0; y < canvas.height; y++) {
-      for (let x = 0; x < canvas.width; x++) {
-        canvas.setPixel(x, y, colorMap[labeledPixels[y][x]]);
-      }
-    }
+    const width = canvas.width;
+    const height = canvas.height;
+    const fullCanvas = [0, width - 1, 0, height - 1];
+    this.updateSection_(fullCanvas);
+    this.drawBorders_(fullCanvas);
     canvas.repaint();
   }
 
-  updateSection_([minX, maxX, minY, maxY]) {
-    for (let y = minY; y <= maxY; y++) {
-      for (let x = minX; x <= maxX; x++) {
+  updateSection_([xMin, xMax, yMin, yMax]) {
+    for (let y = yMin; y <= yMax; y++) {
+      for (let x = xMin; x <= xMax; x++) {
         canvas.setPixel(x, y, colorMap[labeledPixels[y][x]]);
+      }
+    }
+  }
+
+  drawBorders_([xMin, xMax, yMin, yMax]) {
+    for (let y = yMin; y <= yMax; y++) {
+      for (let x of borderPixels[y]) {
+        if (x > xMax) {
+          break;
+        }
+        if (x >= xMin) {
+          canvas.setPixel(x, y, BLACK);
+        }
       }
     }
   }
 
   selectTile(x, y) {
     const tileIndex = labeledPixels[y][x];
-    colorMap[tileIndex] = new Uint8ClampedArray([rand(256), rand(256), rand(256)]);
-    this.updateSection_(tileBounds[tileIndex]);
+
+    const invert = (c) => {
+      c[0] = 255 - c[0];
+      c[1] = 255 - c[1];
+      c[2] = 255 - c[2];
+    };
+
+    invert(colorMap[tileIndex]);
+    neighbors[tileIndex].forEach(nbr => invert(colorMap[nbr]));
+
+    const bounds = tileBounds[tileIndex];
+    neighbors[tileIndex].forEach(nbr => addBounds(bounds, tileBounds[nbr]));
+
+    this.updateSection_(bounds);
+    this.drawBorders_(bounds);
     canvas.repaint();
+
+    return tileIndex;
   }
 
   recolor() {

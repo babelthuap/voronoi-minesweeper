@@ -3,7 +3,7 @@ onmessage = function(e) {
   partition(start, end, width, tiles, metric);
 };
 
-const metrics = {
+const METRICS = {
   1: (x1, y1, x2, y2) => Math.abs(x1 - x2) + Math.abs(y1 - y2),
   2: (x1, y1, x2, y2) => (x1 - x2) ** 2 + (y1 - y2) ** 2,
   3: (x1, y1, x2, y2) => Math.abs(x1 - x2) ** 3 + Math.abs(y1 - y2) ** 3,
@@ -23,12 +23,12 @@ function updateTileBounds(x, y, tile) {
       bounds[3] = y;
     }
   } else {
-    this[tile] = [x, y, x, y];
+    this[tile] = [x, x, y, y];
   }
 }
 
 function partition(start, end, width, tiles, metric) {
-  const distFunction = metrics[metric];
+  const distFunction = METRICS[metric];
   const labeledPixels = new Array(end - start);
   const tileBounds = {};
   const updateBounds = updateTileBounds.bind(tileBounds);
@@ -50,9 +50,5 @@ function partition(start, end, width, tiles, metric) {
       updateBounds(x, y, closestTile);
     }
   }
-
-  // TODO: Calculate borders and neighbors
-  const neighbors = {};
-
   postMessage([labeledPixels, tileBounds]);
 }
