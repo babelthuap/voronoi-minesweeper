@@ -1,7 +1,9 @@
 import Canvas from './Canvas.js';
 import {rand} from './util.js';
 
-const BLACK = new Uint8ClampedArray(3);
+const BLACK = new Uint8ClampedArray(3).fill(0);
+const GREY_A = new Uint8ClampedArray(3).fill(0xAA);
+const GREY_B = new Uint8ClampedArray(3).fill(0xBB);
 const NEIGHBOR_OFFSETS = [
           [1, 0],
   [0, 1], [1, 1],
@@ -10,6 +12,7 @@ const NEIGHBOR_OFFSETS = [
 let borderPixels;
 let canvas;
 let colorMap;
+let hightlighted;
 let labeledPixels;
 let listeners = new Set();
 let neighbors;
@@ -42,7 +45,7 @@ export default class Voronoi {
       const x = Math.random() * width;
       const y = Math.random() * height;
       tiles[i] = [x, y];
-      colorMap[i] = new Uint8ClampedArray([rand(256), rand(256), rand(256)]);
+      colorMap[i] = GREY_B;
     }
     return this;
   }
@@ -152,35 +155,38 @@ export default class Voronoi {
     }
   }
 
-  selectTile(x, y) {
+  highlightTile(x, y) {
+    if (labeledPixels[y] === undefined || !neighbors || !colorMap) {
+      return;
+    }
     const tileIndex = labeledPixels[y][x];
-
-    const invert = (c) => {
-      c[0] = 255 - c[0];
-      c[1] = 255 - c[1];
-      c[2] = 255 - c[2];
-    };
-
-    invert(colorMap[tileIndex]);
-    neighbors[tileIndex].forEach(nbr => invert(colorMap[nbr]));
-
-    const bounds = tileBounds[tileIndex];
-    neighbors[tileIndex].forEach(nbr => addBounds(bounds, tileBounds[nbr]));
-
-    this.updateSection_(bounds);
-    this.drawBorders_(bounds);
-    canvas.repaint();
-
-    return tileIndex;
+    if (tileIndex !== hightlighted) {
+      // Un-highlight old area
+      if (hightlighted !== undefined) {
+        colorMap[hightlighted] = GREY_B;
+        const bounds = tileBounds[hightlighted];
+        neighbors[hightlighted].forEach(nbr => {
+          colorMap[nbr] = GREY_B;
+          addBounds(bounds, tileBounds[nbr]);
+        });
+        this.updateSection_(bounds);
+        this.drawBorders_(bounds);
+      }
+      // Highlight new area
+      hightlighted = tileIndex;
+      colorMap[tileIndex] = GREY_A;
+      neighbors[tileIndex].forEach(nbr => colorMap[nbr] = GREY_A);
+      // Re-render
+      const bounds = tileBounds[tileIndex];
+      neighbors[tileIndex].forEach(nbr => addBounds(bounds, tileBounds[nbr]));
+      this.updateSection_(bounds);
+      this.drawBorders_(bounds);
+      canvas.repaint();
+    }
   }
 
-  recolor() {
-    Object.values(colorMap).forEach(color => {
-      color[0] = rand(256);
-      color[1] = rand(256);
-      color[2] = rand(256);      
-    });
-    return this.render_();
+  getTileIndex(x, y) {
+    return labeledPixels[y][x];
   }
 
   resize(metric) {
